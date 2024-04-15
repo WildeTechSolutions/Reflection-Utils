@@ -1,0 +1,82 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+group = 'com.wildetechsolutions'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation group: 'org.slf4j', name: 'slf4j-api', version: slf4j
+
+    testImplementation platform('org.junit:junit-bom:5.9.1')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+tasks.register('sourcesJar', Jar) {
+    from sourceSets.main.allJava
+    archiveClassifier.set('sources')
+}
+
+tasks.register('javadocJar', Jar) {
+    from javadoc
+    archiveClassifier.set('javadoc')
+}
+
+ext {
+    nexusUrl = System.getenv('NEXUS_URL')
+    snapshotsRepository = "$nexusUrl/maven-snapshots/"
+    releasesRepository = "$nexusUrl/maven-releases/"
+
+    // Change the publish repository as needed
+    publishRepository = releasesRepository
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            artifactId = 'Reflection-Utils'
+//            pom.withXml {
+//                def developer = node("developers")
+//                developer.appendNode("developer") {
+//                    appendNode("id", "your-developer-id") // Replace with your ID
+//                    appendNode("name", "Thomas Wilde") // Replace with your name
+//                    // Optionally add other elements like email, organization, roles
+//                }
+//                def licenses = node("licenses")
+//                licenses.appendNode("license") {
+//                    appendNode("name", "Your License Name") // Replace with your license name
+//                    appendNode("url", "https://your-license-url.com") // Replace with your license URL
+//                }
+//                node("url").setValue("https://your-project-url.com") // Replace with your project URL
+//                node("description").setValue("Your project description") // Replace with your description
+//                def scm = node("scm")
+//                scm.appendNode("connection", "scm:git@github.com:your-username/your-project.git") // Replace with your SCM URL
+//                // Optionally add other elements like url, developerConnection
+//            }
+            from components.java
+            artifact sourcesJar
+            artifact javadocJar
+        }
+    }
+    repositories {
+        maven {
+            url publishRepository
+            credentials {
+                username = System.getenv('NEXUS_USER')
+                password = System.getenv('NEXUS_PASSWORD')
+            }
+        }
+        maven {
+            url file('C:/Users/Thomas/SoftwareProjects/LocalMaven')
+        }
+    }
+}
