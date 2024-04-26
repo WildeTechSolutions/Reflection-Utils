@@ -17,7 +17,8 @@ ext {
 
     artifactName = POM_ARTIFACT_ID
 
-    localMaven = "${System.getProperty('user.home')}/SoftwareProjects/LocalMaven/" + project.ext.artifactName + '_' + version
+    // System.getProperty('java.io.tmpdir')
+    publishLocalMaven = "${System.getProperty('java.io.tmpdir')}/" + project.ext.artifactName + '_' + version
 }
 
 
@@ -82,19 +83,18 @@ publishing {
     }
     repositories {
 
-        if (gradle.taskGraph.hasTask(":deployToSonatype")) {
-            maven {
-                url file(project.ext.localMaven)
-            }
-        }else{
-            maven {
-                url publishRepository
-                credentials {
-                    username = System.getenv('NEXUS_USER')
-                    password = System.getenv('NEXUS_PASSWORD')
-                }
-            }
+//        maven {
+//            url publishRepository
+//            credentials {
+//                username = System.getenv('NEXUS_USER')
+//                password = System.getenv('NEXUS_PASSWORD')
+//            }
+//        }
+
+        maven {
+            url file(project.ext.publishLocalMaven)
         }
+
 
     }
 
@@ -107,8 +107,8 @@ task uploadBundle(type: Exec) {
         // Set up the command to execute curl
         commandLine 'curl', '--request', 'POST',
                 '--verbose',
-                '--header', 'Authorization: Bearer bkFTaWNBbTQ6L0owNEUxc0VrNTV3K3l5Q3hxR3B4S3RGa1BmaXM0SXd0UG9aU2R6b0N4VDIK==',
-                '--form', "bundle=@" + project.ext.localMaven + '.zip',
+                '--header', 'Authorization: Bearer ' + sonatypeToken,
+                '--form', "bundle=@" + project.ext.publishLocalMaven + '.zip',
                 '"https://central.sonatype.com/api/v1/publisher/upload?name=reflection-utils&publishingType=USER_MANAGED"'
     }
 
@@ -119,6 +119,14 @@ task uploadBundle(type: Exec) {
     }
     doLast {
         println "Curl command output: ${output()}"
+
+        // Delete the directory
+        def directoryToDelete = file(project.ext.publishLocalMaven)
+        directoryToDelete.deleteDir()
+
+        // Delete the zip file
+        def zipFileToDelete = file("${project.ext.publishLocalMaven}.zip")
+        zipFileToDelete.delete()
     }
 }
 
@@ -126,12 +134,12 @@ task zipLocalDirectory(type: Zip) {
     // Replace 'path_to_your_directory' with the path to your local directory
 
     // Set the destination directory and archive name
-    destinationDirectory = file(file(project.ext.localMaven).parent)
+    destinationDirectory = file(file(project.ext.publishLocalMaven).parent)
     archiveFileName = project.ext.artifactName + '_' + version + '.zip'
 
     // Set the contents of the zip file to include all files and directories under 'directoryPath'
     // but exclude files starting with 'maven-metadata'
-    from(project.ext.localMaven) {
+    from(project.ext.publishLocalMaven) {
         exclude '**/maven-metadata*'
     }
 }
@@ -140,6 +148,12 @@ task deployToSonatype {
     dependsOn 'publish', 'zipLocalDirectory', 'uploadBundle'
 
     uploadBundle.mustRunAfter zipLocalDirectory
+
+    doFirst {
+        if (version.endsWith('SNAPSHOT')) {
+            throw new GradleException("Cannot deploy SNAPSHOT version to Sonatype.")
+        }
+    }
 }
 
 signing {
