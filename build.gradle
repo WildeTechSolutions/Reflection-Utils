@@ -1,10 +1,22 @@
 plugins {
     id 'java-library'
     id 'maven-publish'
+    id 'signing'
+    id "com.vanniktech.maven.publish" version "0.28.0"
+    id 'com.gradleup.nmcp' version '0.0.7'
+}
+
+ext {
+    nexusUrl = System.getenv('NEXUS_URL')
+    snapshotsRepository = "$nexusUrl/maven-snapshots/"
+    releasesRepository = "$nexusUrl/maven-releases/"
+
+    // Change the publish repository as needed
+    publishRepository = releasesRepository
 }
 
 group = 'com.wildetechsolutions'
-version = '1.0-SNAPSHOT'
+version = '1.0.0'
 
 repositories {
     mavenCentral()
@@ -43,25 +55,30 @@ ext {
 publishing {
     publications {
         mavenJava(MavenPublication) {
-            artifactId = 'Reflection-Utils'
-//            pom.withXml {
-//                def developer = node("developers")
-//                developer.appendNode("developer") {
-//                    appendNode("id", "your-developer-id") // Replace with your ID
-//                    appendNode("name", "Thomas Wilde") // Replace with your name
-//                    // Optionally add other elements like email, organization, roles
-//                }
-//                def licenses = node("licenses")
-//                licenses.appendNode("license") {
-//                    appendNode("name", "Your License Name") // Replace with your license name
-//                    appendNode("url", "https://your-license-url.com") // Replace with your license URL
-//                }
-//                node("url").setValue("https://your-project-url.com") // Replace with your project URL
-//                node("description").setValue("Your project description") // Replace with your description
-//                def scm = node("scm")
-//                scm.appendNode("connection", "scm:git@github.com:your-username/your-project.git") // Replace with your SCM URL
-//                // Optionally add other elements like url, developerConnection
-//            }
+            artifactId = 'reflection-utils'
+            pom {
+                name = 'reflection-utils'
+                description = 'A simple library for accessing sub fields and sub field types'
+                url = 'https://github.com/WildeTechSolutions/Reflection-Utils'
+                licenses {
+                    license {
+                        name = 'The Apache License, Version 2.0'
+                        url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'WildeTechSolutions'
+                        name = 'Thomas Wilde'
+                        email = 'thomas.wilde@wildetechsolutions.com'
+                    }
+                }
+                scm {
+                    connection = 'scm:git:git://github.com/WildeTechSolutions/Reflection-Utils'
+                    developerConnection = 'scm:git:ssh://github.com:WildeTechSolutions/Reflection-Utils.git'
+                    url = 'https://github.com/WildeTechSolutions/Reflection-Utils'
+                }
+            }
             from components.java
             artifact sourcesJar
             artifact javadocJar
@@ -80,3 +97,12 @@ publishing {
         }
     }
 }
+
+nmcp {
+    publishAllProjectsProbablyBreakingProjectIsolation  {
+        username = findProperty('sonatypeUsername') as String
+        password = findProperty('sonatypePassword') as String
+        publicationType = 'USER_MANAGED'
+    }
+}
+
