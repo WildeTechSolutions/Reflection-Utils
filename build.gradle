@@ -2,9 +2,10 @@ plugins {
     id 'java-library'
     id 'maven-publish'
     id 'signing'
-    id "com.vanniktech.maven.publish" version "0.28.0"
-    id 'com.gradleup.nmcp' version '0.0.7'
 }
+
+group = 'com.wildetechsolutions'
+version = '1.0.0'
 
 ext {
     nexusUrl = System.getenv('NEXUS_URL')
@@ -12,11 +13,14 @@ ext {
     releasesRepository = "$nexusUrl/maven-releases/"
 
     // Change the publish repository as needed
-    publishRepository = releasesRepository
+    publishRepository = version.toString().endsWith("SNAPSHOT") ? snapshotsRepository : releasesRepository
+
+    artifactName = POM_ARTIFACT_ID
+
+    localMaven = "${System.getProperty('user.home')}/SoftwareProjects/LocalMaven/" + project.ext.artifactName + '_' + version
 }
 
-group = 'com.wildetechsolutions'
-version = '1.0.0'
+
 
 repositories {
     mavenCentral()
@@ -43,19 +47,11 @@ tasks.register('javadocJar', Jar) {
     archiveClassifier.set('javadoc')
 }
 
-ext {
-    nexusUrl = System.getenv('NEXUS_URL')
-    snapshotsRepository = "$nexusUrl/maven-snapshots/"
-    releasesRepository = "$nexusUrl/maven-releases/"
-
-    // Change the publish repository as needed
-    publishRepository = releasesRepository
-}
-
 publishing {
     publications {
+
         mavenJava(MavenPublication) {
-            artifactId = 'reflection-utils'
+            artifactId = artifactName
             pom {
                 name = 'reflection-utils'
                 description = 'A simple library for accessing sub fields and sub field types'
@@ -85,24 +81,73 @@ publishing {
         }
     }
     repositories {
-        maven {
-            url publishRepository
-            credentials {
-                username = System.getenv('NEXUS_USER')
-                password = System.getenv('NEXUS_PASSWORD')
+
+        if (gradle.taskGraph.hasTask(":deployToSonatype")) {
+            maven {
+                url file(project.ext.localMaven)
+            }
+        }else{
+            maven {
+                url publishRepository
+                credentials {
+                    username = System.getenv('NEXUS_USER')
+                    password = System.getenv('NEXUS_PASSWORD')
+                }
             }
         }
-        maven {
-            url file('C:/Users/Thomas/SoftwareProjects/LocalMaven')
-        }
+
+    }
+
+}
+
+task uploadBundle(type: Exec) {
+    // Check if the OS supports curl
+    doFirst {
+
+        // Set up the command to execute curl
+        commandLine 'curl', '--request', 'POST',
+                '--verbose',
+                '--header', 'Authorization: Bearer bkFTaWNBbTQ6L0owNEUxc0VrNTV3K3l5Q3hxR3B4S3RGa1BmaXM0SXd0UG9aU2R6b0N4VDIK==',
+                '--form', "bundle=@" + project.ext.localMaven + '.zip',
+                '"https://central.sonatype.com/api/v1/publisher/upload?name=reflection-utils&publishingType=USER_MANAGED"'
+    }
+
+    // Optionally handle the output
+    standardOutput = new ByteArrayOutputStream()
+    ext.output = {
+        return standardOutput.toString()
+    }
+    doLast {
+        println "Curl command output: ${output()}"
     }
 }
 
-nmcp {
-    publishAllProjectsProbablyBreakingProjectIsolation  {
-        username = findProperty('sonatypeUsername') as String
-        password = findProperty('sonatypePassword') as String
-        publicationType = 'USER_MANAGED'
+task zipLocalDirectory(type: Zip) {
+    // Replace 'path_to_your_directory' with the path to your local directory
+
+    // Set the destination directory and archive name
+    destinationDirectory = file(file(project.ext.localMaven).parent)
+    archiveFileName = project.ext.artifactName + '_' + version + '.zip'
+
+    // Set the contents of the zip file to include all files and directories under 'directoryPath'
+    // but exclude files starting with 'maven-metadata'
+    from(project.ext.localMaven) {
+        exclude '**/maven-metadata*'
     }
 }
+
+task deployToSonatype {
+    dependsOn 'publish', 'zipLocalDirectory', 'uploadBundle'
+
+    uploadBundle.mustRunAfter zipLocalDirectory
+}
+
+signing {
+    sign publishing.publications.mavenJava
+}
+
+
+
+
+
 
