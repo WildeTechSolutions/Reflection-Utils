@@ -1,10 +1,22 @@
 plugins {
     id 'java-library'
     id 'maven-publish'
+    id 'signing'
 }
 
-group = 'com.wildetechsolutions'
-version = '1.0-SNAPSHOT'
+group = GROUP
+version = VERSION_NAME
+
+ext {
+    nexusUrl = System.getenv('NEXUS_URL')
+    // Change the publish repository as needed
+    publishRepository = version.toString().endsWith("SNAPSHOT") ? "$nexusUrl/maven-snapshots/" : "$nexusUrl/maven-releases/"
+
+    publishDir = layout.buildDirectory.dir("sonatype").get().asFile.absolutePath
+    sonatypePublish = publishDir + "/" + POM_ARTIFACT_ID + '_' + version
+}
+
+
 
 repositories {
     mavenCentral()
@@ -31,52 +43,115 @@ tasks.register('javadocJar', Jar) {
     archiveClassifier.set('javadoc')
 }
 
-ext {
-    nexusUrl = System.getenv('NEXUS_URL')
-    snapshotsRepository = "$nexusUrl/maven-snapshots/"
-    releasesRepository = "$nexusUrl/maven-releases/"
-
-    // Change the publish repository as needed
-    publishRepository = releasesRepository
-}
-
 publishing {
     publications {
+
         mavenJava(MavenPublication) {
-            artifactId = 'Reflection-Utils'
-//            pom.withXml {
-//                def developer = node("developers")
-//                developer.appendNode("developer") {
-//                    appendNode("id", "your-developer-id") // Replace with your ID
-//                    appendNode("name", "Thomas Wilde") // Replace with your name
-//                    // Optionally add other elements like email, organization, roles
-//                }
-//                def licenses = node("licenses")
-//                licenses.appendNode("license") {
-//                    appendNode("name", "Your License Name") // Replace with your license name
-//                    appendNode("url", "https://your-license-url.com") // Replace with your license URL
-//                }
-//                node("url").setValue("https://your-project-url.com") // Replace with your project URL
-//                node("description").setValue("Your project description") // Replace with your description
-//                def scm = node("scm")
-//                scm.appendNode("connection", "scm:git@github.com:your-username/your-project.git") // Replace with your SCM URL
-//                // Optionally add other elements like url, developerConnection
-//            }
+            artifactId = POM_ARTIFACT_ID
+            pom {
+                name = POM_NAME
+                description = POM_DESCRIPTION
+
+                url = POM_URL
+                licenses {
+                    license {
+                        name = POM_LICENSE_NAME
+                        url = POM_LICENSE_URL
+                    }
+                }
+                developers {
+                    developer {
+                        id = POM_DEVELOPER_ID
+                        name = POM_DEVELOPER_NAME
+                        url = POM_DEVELOPER_URL
+                        email = POM_DEVELOPER_EMAIL
+                    }
+                }
+                scm {
+                    connection = POM_SCM_CONNECTION
+                    developerConnection = POM_SCM_DEV_CONNECTION
+                    url = POM_SCM_URL
+                }
+            }
             from components.java
             artifact sourcesJar
             artifact javadocJar
         }
     }
     repositories {
+
+//        maven {
+//            url publishRepository
+//            credentials {
+//                username = System.getenv('NEXUS_USER')
+//                password = System.getenv('NEXUS_PASSWORD')
+//            }
+//        }
+
         maven {
-            url publishRepository
-            credentials {
-                username = System.getenv('NEXUS_USER')
-                password = System.getenv('NEXUS_PASSWORD')
-            }
+            url file(project.ext.sonatypePublish)
         }
-        maven {
-            url file('C:/Users/Thomas/SoftwareProjects/LocalMaven')
+
+
+    }
+
+}
+
+task uploadBundle(type: Exec) {
+    // Check if the OS supports curl
+    doFirst {
+        // Set up the command to execute curl
+        commandLine 'curl', '--request', 'POST',
+                '--verbose',
+                '--header', 'Authorization: Bearer ' + SONATYPE_TOKEN,
+                '--form', "bundle=@" + project.ext.sonatypePublish + '.zip',
+                '"https://central.sonatype.com/api/v1/publisher/upload?name=' + GROUP + '.' + POM_ARTIFACT_ID + ':' + VERSION_NAME + '&publishingType=' + SONATYPE_PUBLISH + '"'
+    }
+
+    // Optionally handle the output
+    standardOutput = new ByteArrayOutputStream()
+    ext.output = {
+        return standardOutput.toString()
+    }
+    doLast {
+        println "Curl command output: ${output()}"
+    }
+}
+
+task zipLocalDirectory(type: Zip) {
+    // Replace 'path_to_your_directory' with the path to your local directory
+
+    // Set the destination directory and archive name
+    destinationDirectory = file(file(project.ext.sonatypePublish).parent)
+    archiveFileName = POM_ARTIFACT_ID + '_' + version + '.zip'
+
+    // Set the contents of the zip file to include all files and directories under 'directoryPath'
+    // but exclude files starting with 'maven-metadata'
+    from(project.ext.sonatypePublish) {
+        exclude '**/maven-metadata*'
+    }
+}
+
+task deployToSonatype {
+
+    dependsOn 'publish', 'zipLocalDirectory', 'uploadBundle'
+
+    uploadBundle.mustRunAfter zipLocalDirectory
+
+    doFirst {
+        file(project.ext.publishDir).delete()
+        if (version.endsWith('SNAPSHOT')) {
+            throw new GradleException("Cannot deploy SNAPSHOT version to Sonatype.")
         }
     }
 }
+
+signing {
+    sign publishing.publications.mavenJava
+}
+
+
+
+
+
+
