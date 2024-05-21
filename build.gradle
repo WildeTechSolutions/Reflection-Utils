@@ -4,21 +4,16 @@ plugins {
     id 'signing'
 }
 
-group = 'com.wildetechsolutions'
-version = '1.0.0'
+group = GROUP
+version = VERSION_NAME
 
 ext {
     nexusUrl = System.getenv('NEXUS_URL')
-    snapshotsRepository = "$nexusUrl/maven-snapshots/"
-    releasesRepository = "$nexusUrl/maven-releases/"
-
     // Change the publish repository as needed
-    publishRepository = version.toString().endsWith("SNAPSHOT") ? snapshotsRepository : releasesRepository
+    publishRepository = version.toString().endsWith("SNAPSHOT") ? "$nexusUrl/maven-snapshots/" : "$nexusUrl/maven-releases/"
 
-    artifactName = POM_ARTIFACT_ID
-
-    // System.getProperty('java.io.tmpdir')
-    publishLocalMaven = "${System.getProperty('java.io.tmpdir')}/" + project.ext.artifactName + '_' + version
+    publishDir = layout.buildDirectory.dir("sonatype").get().asFile.absolutePath
+    sonatypePublish = publishDir + "/" + POM_ARTIFACT_ID + '_' + version
 }
 
 
@@ -52,28 +47,30 @@ publishing {
     publications {
 
         mavenJava(MavenPublication) {
-            artifactId = artifactName
+            artifactId = POM_ARTIFACT_ID
             pom {
-                name = 'reflection-utils'
-                description = 'A simple library for accessing sub fields and sub field types'
-                url = 'https://github.com/WildeTechSolutions/Reflection-Utils'
+                name = POM_NAME
+                description = POM_DESCRIPTION
+
+                url = POM_URL
                 licenses {
                     license {
-                        name = 'The Apache License, Version 2.0'
-                        url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                        name = POM_LICENSE_NAME
+                        url = POM_LICENSE_URL
                     }
                 }
                 developers {
                     developer {
-                        id = 'WildeTechSolutions'
-                        name = 'Thomas Wilde'
-                        email = 'thomas.wilde@wildetechsolutions.com'
+                        id = POM_DEVELOPER_ID
+                        name = POM_DEVELOPER_NAME
+                        url = POM_DEVELOPER_URL
+                        email = POM_DEVELOPER_EMAIL
                     }
                 }
                 scm {
-                    connection = 'scm:git:git://github.com/WildeTechSolutions/Reflection-Utils'
-                    developerConnection = 'scm:git:ssh://github.com:WildeTechSolutions/Reflection-Utils.git'
-                    url = 'https://github.com/WildeTechSolutions/Reflection-Utils'
+                    connection = POM_SCM_CONNECTION
+                    developerConnection = POM_SCM_DEV_CONNECTION
+                    url = POM_SCM_URL
                 }
             }
             from components.java
@@ -92,7 +89,7 @@ publishing {
 //        }
 
         maven {
-            url file(project.ext.publishLocalMaven)
+            url file(project.ext.sonatypePublish)
         }
 
 
@@ -103,13 +100,12 @@ publishing {
 task uploadBundle(type: Exec) {
     // Check if the OS supports curl
     doFirst {
-
         // Set up the command to execute curl
         commandLine 'curl', '--request', 'POST',
                 '--verbose',
-                '--header', 'Authorization: Bearer ' + sonatypeToken,
-                '--form', "bundle=@" + project.ext.publishLocalMaven + '.zip',
-                '"https://central.sonatype.com/api/v1/publisher/upload?name=reflection-utils&publishingType=USER_MANAGED"'
+                '--header', 'Authorization: Bearer ' + SONATYPE_TOKEN,
+                '--form', "bundle=@" + project.ext.sonatypePublish + '.zip',
+                '"https://central.sonatype.com/api/v1/publisher/upload?name=' + GROUP + '.' + POM_ARTIFACT_ID + ':' + VERSION_NAME + '&publishingType=' + SONATYPE_PUBLISH + '"'
     }
 
     // Optionally handle the output
@@ -119,14 +115,6 @@ task uploadBundle(type: Exec) {
     }
     doLast {
         println "Curl command output: ${output()}"
-
-        // Delete the directory
-        def directoryToDelete = file(project.ext.publishLocalMaven)
-        directoryToDelete.deleteDir()
-
-        // Delete the zip file
-        def zipFileToDelete = file("${project.ext.publishLocalMaven}.zip")
-        zipFileToDelete.delete()
     }
 }
 
@@ -134,22 +122,24 @@ task zipLocalDirectory(type: Zip) {
     // Replace 'path_to_your_directory' with the path to your local directory
 
     // Set the destination directory and archive name
-    destinationDirectory = file(file(project.ext.publishLocalMaven).parent)
-    archiveFileName = project.ext.artifactName + '_' + version + '.zip'
+    destinationDirectory = file(file(project.ext.sonatypePublish).parent)
+    archiveFileName = POM_ARTIFACT_ID + '_' + version + '.zip'
 
     // Set the contents of the zip file to include all files and directories under 'directoryPath'
     // but exclude files starting with 'maven-metadata'
-    from(project.ext.publishLocalMaven) {
+    from(project.ext.sonatypePublish) {
         exclude '**/maven-metadata*'
     }
 }
 
 task deployToSonatype {
+
     dependsOn 'publish', 'zipLocalDirectory', 'uploadBundle'
 
     uploadBundle.mustRunAfter zipLocalDirectory
 
     doFirst {
+        file(project.ext.publishDir).delete()
         if (version.endsWith('SNAPSHOT')) {
             throw new GradleException("Cannot deploy SNAPSHOT version to Sonatype.")
         }
